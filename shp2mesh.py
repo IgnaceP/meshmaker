@@ -796,12 +796,9 @@ class pymesh:
     def writeGeoFileLineLoopsSurface(self, f, inner_rings = True):
         """
         Method to write the lines indicating the line loop and surface of the exterior ring
-
         Args:
             f: (Required) open text file representing the .geo file
             inner_rings: (Optional, defaults to True) True/False boolean to add the points and splines of the inner rings
-
-
         """
 
         # set global parameters as local
@@ -897,7 +894,7 @@ class pymesh:
         Method to create a background file_
 
         Args:
-            XY_field: (Required) directory path string to a pickle which hold a list with the following elements:
+            XY_field: (Required) directory path string or list of strings to a pickle which hold a list with the following elements:
                         - 2d numpy array representing a spatial raster with values for the mesh size (!!! non-channels cells should be zero)
                         - coordinate pair with the coordinates of the left bottom corner of the 2d numpy array
                         - x resolution
@@ -911,18 +908,19 @@ class pymesh:
         """
         print('Creating a background file...')
         # open the pickled file with the needed information for a heterogenuous background field
+        print(XY_field)
+
         with open(XY_field, 'rb') as input:
             xy = pickle.load(input)
         # background file
-        background_file = self.geofile[:-3] + 'bg'
+        background_file = XY_field[:-3] + 'bg'
         # function to create a valid background field from a Numpy 2D array
         np2BackgroundField(xy[0], background_file , multiplier = multiplier, minres = minres,
             zerovalues = zerovalues, zeropoint= xy[1], xres = xy[2], yres = xy[3], plot_arr = plot_arr,
             buffer_interpolation = buffer_interpolation)
 
-        self.background_file = background_file
         print('Background file created!')
-
+        print('-----------------------------------')
         return background_file
 
     def writeGeoFileHeterogeneousMesh(self, f, XY_field, multiplier = 1, minres = 25,
@@ -947,7 +945,14 @@ class pymesh:
 
         """
         if create_background_file:
-            self.createBackgroundFile(XY_field, multiplier = multiplier, minres = minres, zerovalues = zerovalues, plot_arr = plot_arr, buffer_interpolation = buffer_interpolation)
+            if type(XY_field) != list:
+                bf = [self.createBackgroundFile(XY_field, multiplier = multiplier, minres = minres, zerovalues = zerovalues, plot_arr = plot_arr, buffer_interpolation = buffer_interpolation)]
+            else:
+                bf = []
+                for field in XY_field:
+                    bf.append(self.createBackgroundFile(field, multiplier = multiplier, minres = minres, zerovalues = zerovalues, plot_arr = plot_arr, buffer_interpolation = buffer_interpolation))
+        else:
+            bf = [XY_field.split('.')[0]+'.bg']
 
         # add header
         f.write('//+\n//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n'
@@ -955,16 +960,36 @@ class pymesh:
                 '++++++++++++++++++\n')
 
         # complete the background directory if it's a local directory
-        background_file = self.background_file
-        if background_file[0] == '.':
-            background_file = os.getcwd() + background_file[1:]
-        # add this background field as the structured background field
-        f.write('Field[1] = Structured;\nField[1].FileName = "%s";\n' % (background_file))
-        # set the cell size outside the background field
-        f.write('Field[1].OutsideValue = %f;\n' % (outside_mesh_size))
-        f.write('Field[1].SetOutsideValue = 1;\n')
-        # set the format of this background field and set is at the background file to apply the meshing on
-        f.write('Field[1].TextFormat = 1;\nBackground Field = 1;\n//+')
+        bf_correctpaths = []
+        for background_file in bf:
+            if background_file[0] == '.':
+                background_file = os.getcwd() + background_file[1:]
+            bf_correctpaths.append(background_file)
+
+        # make sure that the required parameters are in a list format
+        if type(outside_mesh_size) != list: outside_mesh_size = [outside_mesh_size]
+
+        n = 0
+        for background_file in bf_correctpaths:
+            n += 1
+            # add this background field as the structured background field
+            f.write('Field[%d] = Structured;\nField[%d].FileName = "%s";\n' % (n, n, background_file))
+            # set the cell size outside the background field
+            f.write('Field[%d].OutsideValue = %f;\n' % (n, outside_mesh_size[n-1]))
+            f.write('Field[%d].SetOutsideValue = %d;\n' % (n,n))
+            # set the format of this background field and set is at the background file to apply the meshing on
+            f.write('Field[%d].TextFormat = 1;\n' % (n))
+
+        if n == 1:
+            f.write('Background Field = 1;\n//+')
+        else:
+            n += 1
+            f.write('Field[%d] = Min;\n' % n)
+            f.write('Field[%d].FieldsList = {1' % n)
+            for i in range(2,n):
+                f.write(', %d' % i)
+            f.write('};\n')
+            f.write('Background Field = %d;\n//+' % n)
 
         return f
 
