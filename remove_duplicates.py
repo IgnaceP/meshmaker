@@ -22,29 +22,9 @@ def removeDuplicates(mpol):
 
     # check if it is a Polygon or a MultiPolygon
     if type(mpol) == Polygon:
-        mpol = [mpol]
+        mpol = MultiPolygon([mpol])
 
-    # Initialize list for new pols
-    pols = []
-
-    # Loop over all Polygons
-    for pol in mpol:
-
-        # exterior
-        xy = np.rot90(pol.exterior.xy)
-        indexes = np.unique(xy, return_index=True, axis = 0)[1]
-        xy = np.asarray([xy[index] for index in sorted(indexes)])
-
-        # interiors
-        xys_i = []
-        for i in pol.interiors:
-            xy_i = np.rot90(i.xy)
-            indexes = np.unique(xy_i, return_index=True, axis = 0)[1]
-            xy_i = np.asarray([xy_i[index] for index in sorted(indexes)])
-            xys_i.append(xy_i)
-
-        # create Polygon and add to polygon list
-        pols.append(Polygon(xy, xys_i))
+    mpol = mpol.simplify(0)
 
     # if the input was a Polygon, return a Polgyon
     if type(mpol) == Polygon:

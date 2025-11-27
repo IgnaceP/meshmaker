@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """ Shapefile to .Geo file converter
 
 Module to convert a shapefile '.shp' to a geometry file of gmsh '.geo'.
@@ -16,18 +14,11 @@ import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib
-from shapely.geometry import Point
-import pandas as pd
-import geopandas as gpd
-
-matplotlib.use('Agg')
 
 from shp2mpol import *
 from pol2pol import *
 from remove_vertices import *
 from remove_duplicates import *
-from reverse_polygon import *
 from polplot import *
 from np2bgfield import *
 
@@ -59,7 +50,7 @@ class pymesh:
 
         self.dir = dir
 
-    def loadShp(self, fn, proj = 32717, remove_vertices = True, remove_duplicates = True, reverse_polygon = False):
+    def loadShp(self, fn, proj = 32717, remove_vertices = True, remove_duplicates = True):
         """
         Method to load a shapefile (.shp) and tranform to shapely Polygon, A Numpy array with dimension n x 2 with the
         exterior coordinates and a list of Numpy arrays with dimensions m x 3 with all coordinates of the inner rings.
@@ -75,21 +66,12 @@ class pymesh:
 
         # load .shp and reproject
         pol, epsg = shp2Mpol(fn, return_coordinate_system = True)
-        if epsg != proj:
-            print('reprojecting...')
-            pol = pol2Pol(pol, epsg, proj).geoms[0]
-            print('reprojected!')
-
-        if isinstance(pol, MultiPolygon):
-            pol = pol.geoms[0]
+        pol = pol2Pol(pol, epsg, proj)[0]
 
         # remove excessive vertices
-        if remove_vertices: pol = removeVertices(pol)
+        if remove_vertices: pol = removeVertices(pol)[0]
         # Remove duplicates (highly recommended!)
-        if remove_duplicates: pol = pol.simplify(0)
-
-        if reverse_polygon:
-            pol = reversePolygon(pol)
+        if remove_duplicates: pol = removeDuplicates(pol)[0]
 
         # convert to Numpy Array and rotate 90° do the shape becoms n x 2, remove z-coordinates
         exter = np.rot90(pol.exterior.xy)[:-1,0:2]
@@ -104,109 +86,6 @@ class pymesh:
         self.inter = inter
         self.n = n
         self.n_inner_rings = len(inter)
-        self.proj = proj
-    
-    def loadGPKG(self, fn, proj = 0, remove_vertices = True, remove_duplicates = True, reverse_polygon = False):
-        """
-        Method to load a geopackage (.gpkg) and tranform to shapely Polygon, A Numpy array with dimension n x 2 with the
-        exterior coordinates and a list of Numpy arrays with dimensions m x 3 with all coordinates of the inner rings.
-
-        Args:
-            fn: (Required) string with path to shapefile
-            proj: (Optional, defaults to 32717) epsg code of the desired projection (hint: use metric projections, for instane, avoid epsg:4326)
-                   Default is set at 32717 which is the epsg code for WGS 84 / UTM 17S.
-            remove_vertices: (Optional, defaults to True) True/False boolean to indicate whether excessive vertices should be removed
-                             Excessive is defined as vertices where there is no change of direction.
-            remove_duplicates: (Optional, defaults to True) True/False boolean to indicate whether duplica vertices should be removed
-        """
-
-        # load .gpkg
-        gdf = gpd.read_file(fn, engine='pyogrio')
-        epsg = int(gdf.crs.srs.split(':')[-1])
-
-        # if need, reproject
-        if epsg != proj and proj != 0:
-            gdf = gdf.to_crs(epsg = proj)
-            print('reprojected!')
-
-        roi = gdf.iloc[0]
-        pol = roi.geometry
-
-        if isinstance(pol, MultiPolygon):
-            pol = pol.geoms[0]
-
-        # remove excessive vertices
-        if remove_vertices: pol = removeVertices(pol)
-        # Remove duplicates (highly recommended!)
-        if remove_duplicates: pol = pol.simplify(0)
-
-        if reverse_polygon:
-            pol = reversePolygon(pol)
-
-        # convert to Numpy Array and rotate 90° do the shape becoms n x 2, remove z-coordinates
-        exter = np.rot90(pol.exterior.xy)[:-1,0:2]
-        inter = [np.rot90(i.xy)[:-1,0:2] for i in pol.interiors]
-
-        # number of exterior vertices
-        n = len(exter)
-
-        # set attributes
-        self.pol = pol
-        self.exter = exter
-        self.inter = inter
-        self.n = n
-        self.n_inner_rings = len(inter)
-        self.proj = proj
-
-    def loadPolygon(self, pol, proj = 32717, remove_duplicates = True):
-        """
-        Method to load a Shapely polygon.
-
-        Args:
-            pol: (Required) Shapely polygon
-            remove_duplicates: (Optional, defaults to True) True/False boolean to indicate whether duplica vertices should be removed
-        """
-
-        if isinstance(pol, MultiPolygon):
-            pol = pol.geoms[0]
-
-        # Remove duplicates (highly recommended!)
-        if remove_duplicates: pol = pol.simplify(0)
-
-        # convert to Numpy Array and rotate 90° do the shape becoms n x 2, remove z-coordinates
-        exter = np.rot90(pol.exterior.xy)[:-1,0:2]
-        inter = [np.rot90(i.xy)[:-1,0:2] for i in pol.interiors]
-
-        # number of exterior vertices
-        n = len(exter)
-
-        # set attributes
-        self.pol = pol
-        self.exter = exter
-        self.inter = inter
-        self.n = n
-        self.n_inner_rings = len(inter)
-        self.proj = proj
-
-    def findBoundaries(self, boundaries = []):
-        """
-        Method to find boundaries based on x,y pairs
-        :param boundaries: list of boundaries where each boundary follows the format: [[x1,y1],[x2,y2]]
-        :return:
-        """
-        bs = []
-
-        for boundary in boundaries:
-            b0x, b0y = boundary[0]
-            b1x, b1y = boundary[1]
-            i0 = np.argmin((self.exter[:,0]-b0x)**2 + (self.exter[:,1]-b0y)**2)+1
-            i1 = np.argmin((self.exter[:,0]-b1x)**2 + (self.exter[:,1]-b1y)**2)+1
-            i0,i1 = np.sort([i0,i1])
-
-            bs.append([i0,i1])
-        
-        boundaries = sorted(bs, key=lambda x: x[0])
-        self.setBoundariesAndBreaks(boundaries = boundaries)
 
     def setBoundariesAndBreaks(self, boundaries = [], breaks = []):
         """
@@ -221,109 +100,51 @@ class pymesh:
         self.boundaries = boundaries
         self.breaks = breaks
 
-    def vert2shp(self, fn):
-        """
-        Method to create a shapefile containing points with their labels
-
-        Args:
-            fn: (Required) filename/directory path string to store the shapefile
-        """
-
-        # put all coordinates in one array
-        coor = np.asarray(self.exter)
-        for i in self.inter:
-            coor = np.vstack((coor, np.asarray(i)))
-
-        # create a CRS object
-        source = osr.SpatialReference()
-        source.ImportFromEPSG(self.proj)
-
-        # Now convert it to a shapefile with OGR
-        driver = ogr.GetDriverByName('Esri Shapefile')
-        if fn[-4:] != '.shp': fn += '.shp'
-        ds = driver.CreateDataSource(fn)
-        layer = ds.CreateLayer('', source, geom_type = ogr.wkbPoint)
-        # Add one attribute
-        layer.CreateField(ogr.FieldDefn('id', ogr.OFTInteger))
-        defn = layer.GetLayerDefn()
-
-        for i in range(coor.shape[0]):
-            # Create a new feature (attribute and geometry)
-            feat = ogr.Feature(defn)
-            feat.SetField('id', i+1)
-
-            # Make a geometry, from Shapely object
-            p = Point(coor[i,0], coor[i,1])
-            geom = ogr.CreateGeometryFromWkb(p.wkb)
-            geom.AssignSpatialReference(source)
-            feat.SetGeometry(geom)
-
-            layer.CreateFeature(feat)
-            feat = geom = None  # destroy these
-
-        # Save and close everything
-        ds = layer = feat = geom = None
-
-    def plotShp(self, figfile=None, plot_inner=True, plot_vert=True, plot_vertlabels=False,
-                plot_each_x_labels=10, figure_size=(50, 50), font_size=10, set_bounds=False, axis=None):
+    def plotShp(self, figfile, plot_inner = True, plot_vert = True, plot_vertlabels = False, plot_each_x_labels = 10, figure_size = (50,50)):
         """
         Method to plot the original shapefile (after reprojecting)
 
         Args:
-            figfile: (Optional) Path (string) to save the figure. Required if no axis is provided.
-            plot_inner: (Optional) True/False to plot inner rings
-            plot_vert: (Optional) True/False to show vertices
-            plot_vertlabels: (Optional) True/False to show vertex labels
-            plot_each_x_labels: (Optional) Int for label interval
-            figure_size: (Optional) Tuple for figure size
-            font_size: (Optional) Font size for vertex labels
-            set_bounds: (Optional) False or list of bounds [min_lat, max_lat, min_lon, max_lon]
-            axis: (Optional) Matplotlib axis to plot into; if None, creates a new figure
-        """
-        is_external_axis = axis is not None
-        if not is_external_axis:
-            fig, axis = plt.subplots(figsize=figure_size)
-            axis.set_aspect('equal')
+            figfile: (Required) Directory path (string) to save the figure
+            plot_inner: (Optional, defaults to False) True/False boolean to indicate whether to plot the inner rings
+            plot_vert: (Optional, defaults to True) True/False boolean to indicate whether the vertices should be shown
+            plot_vertlabels: (Optional, defaults to False) True/False boolean to indicate whether the vertices labels should be shown
+            plot_each_x_label: (Optional, defaults to 10) int to determine the interval to show vertices labels
+            figure_size: (Optional, defaults to (50,50)) tuple, list or array of dimensions 2 to indicate the figure size
 
+        """
+
+        f, a = plt.subplots(figsize = figure_size)
+        a.set_aspect('equal')
         # plot polygon
-        if plot_inner:
-            polPlot(self.exter, XY_inner=self.inter, show_vertices=plot_vert, empty=False, plot_on_axis=axis,
-                    show_vertices_labels=plot_vertlabels, show_vertices_labels_interval=plot_each_x_labels,
-                    vertices_color='maroon', font_size=font_size)
-        else:
-            polPlot(self.exter, show_vertices=plot_vert, empty=False, plot_on_axis=axis,
-                    show_vertices_labels=plot_vertlabels, show_vertices_labels_interval=plot_each_x_labels,
-                    vertices_color='maroon', font_size=font_size)
+        if plot_inner: polPlot(self.exter, XY_inner = self.inter, show_vertices = plot_vert, empty= False, plot_on_axis = a,
+                                   show_vertices_labels= plot_vertlabels, show_vertices_labels_interval = plot_each_x_labels,
+                                   vertices_color = 'maroon')
+        else: polPlot(self.exter, show_vertices = plot_vert, empty= False, plot_on_axis = a,
+                          show_vertices_labels= plot_vertlabels, show_vertices_labels_interval = plot_each_x_labels,
+                          vertices_color = 'maroon')
 
         # indicate boundaries
         for b in self.boundaries:
-            X, Y = [], []
-            for i in range(b[0], b[1] + 1):
-                x, y = self.exter[i - 1]
+            X,Y = [[],[]]
+            for i in range(b[0], b[1]+1):
+                x, y = self.exter[i-1]
                 X.append(x)
                 Y.append(y)
-            axis.plot(X, Y, color='purple', label='boundaries')
-
+            bound = a.plot(X, Y, color = 'purple', label = 'boundaries')
         # indicate break points
         for b in self.breaks:
-            x, y = self.exter[b - 1]
-            axis.scatter(x, y, c='pink', label='breaks')
+            x, y = exter[b-1]
+            bre = a.scatter(x,y, c = 'pink', label = 'breaks')
 
-        if set_bounds and isinstance(set_bounds, (list, tuple)) and len(set_bounds) == 4:
-            axis.set_xlim(set_bounds[2], set_bounds[3])
-            axis.set_ylim(set_bounds[0], set_bounds[1])
-
-        # Save figure only if we created one
-        if not is_external_axis and figfile:
-            fig.savefig(figfile)
-            plt.close(fig)
+        f.savefig(figfile)
 
     def writeGeoFile(self, filename, cell_size = 250, spline_max_len = False, inner_rings = True, include_inner_rings = False,
-                    XY_field = ' ', background_file = '', multiplier = 1, minres = 25, maxres = 1e9,
-                    zerovalues = 250, outside_mesh_size = 250, plot_arr = False,
+                    XY_field = ' ', background_file = ' ', multiplier = 1, minres = 25,
+                    zerovalues = 250, outside_mesh_size = 250, plot_arr = './backgroundfield.png',
                     buffer_interpolation = 50, algo = 'Frontal-Delaunay', line_type = 'Splines', no_mesh_def = False,
                     prevent_add_nodes_to_edge = False, create_background_file = True, add_physical_lines = True,
-                    physical_line_labels = ['closed', 'TidalEntrance', 'ClosedInner'], inner_rings_splines = True,):
+                    physical_line_labels = ['closed', 'TidalEntrance', 'ClosedInner']):
         """
         Method to write a .geo file
 
@@ -359,13 +180,12 @@ class pymesh:
             create_background_file: (Optional, defaults to True) True/False boolean which indicates whether to create a background file
             add_physical_lines: (Optional, defaults to True) True/False boolean which indicates whether to create physical lines
             physical_line_labels: (Optional, defaults to ['closed', 'TidalEntrance', 'ClosedInner']) dictionary of label names for the physical lines.
-            inner_rings_splines: (Optional, defaults to True) True/False boolean to indicate wheter to use splines (True) or lines (False) to create the inner rings
         """
+
         # set attributes
         self.algo = algo
         if type(cell_size) == int: self.holescellsize = cell_size
         else: self.holescellsize = zerovalues
-        self.inner = inner_rings
 
 
         # Open txt file and allow both writing and reading
@@ -373,9 +193,7 @@ class pymesh:
         self.geofile = filename
 
         # write header to indicate the right engine
-        f.write("SetFactory(\"OpenCASCADE\");\n")
-        f.write("Geometry.OCCParallel = 1;\n")
-        f.write("General.NumThreads = 6;\n//+\n")
+        f.write("SetFactory(\"OpenCASCADE\");\n//+\n")
 
         # initialize counters for each features
         self.n_Point = 1
@@ -393,14 +211,11 @@ class pymesh:
         f = self.writeGeoFileAddPoints(f)
 
         # write the spline/line lines
-        if line_type == 'Splines':
-            f = self.writeGeoFileAddSplines(f, spline_max_len = spline_max_len, line_type = line_type)
-        else:
-            f = self.writeGeoFileAddLines(f)
+        f = self.writeGeoFileAddSplines(f, spline_max_len = spline_max_len, line_type = line_type)
 
         # write points and inner rings
         if inner_rings:
-            f = self.writeGeoFileInnerRings(f, inner_rings_splines = inner_rings_splines)
+            f = self.writeGeoFileInnerRings(f)
 
         # write physical boundaries
         if add_physical_lines:
@@ -416,15 +231,13 @@ class pymesh:
         # Line loop and surface of exterior ring
         f = self.writeGeoFileLineLoopsSurface(f, inner_rings = inner_rings)
 
-        print('background file: ', background_file)
         # set mesh cell size
         if not no_mesh_def:
             if type(cell_size) == str:
                 if cell_size == 'hetero':
-                    if len(background_file) > 0: create_background_file = False;
-                    f = self.writeGeoFileHeterogeneousMesh(f, XY_field, multiplier = multiplier, minres = minres, maxres = maxres,
+                    f = self.writeGeoFileHeterogeneousMesh(f, XY_field, multiplier = multiplier, minres = minres,
                         zerovalues = zerovalues, outside_mesh_size = outside_mesh_size, plot_arr =  plot_arr,
-                        buffer_interpolation = buffer_interpolation, create_background_file = create_background_file, background_file = background_file)
+                        buffer_interpolation = buffer_interpolation, create_background_file = create_background_file)
             elif type(cell_size) == float or type(cell_size) == int:
                 f = self.writeGeoFileHomogeneousMesh(f, mesh_size = cell_size)
 
@@ -709,8 +522,7 @@ class pymesh:
                             f.write("%d};\nSpline(%d) = {%d, " % (i, n_Spline, i))
                             n_Spline += 1
                     f.write('%d,' % (i))
-                f.write('%d};\n' % (1))
-                n_Spline += 1
+                f.write('%d};\n' % (n_Point))
             elif line_type == 'Lines':
                 # create first Line
                 f.write('Line(1) = {1,')
@@ -731,46 +543,12 @@ class pymesh:
 
         return f
 
-    def writeGeoFileAddLines(self, f):
-        """
-        Method to write and lines of the exterior in the .geo file
-
-        Args:
-            f: (Required) open text file representing the .geo file
-          """
-
-        # add a header
-        f.write('//+\n//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n'
-                '//+ Lines & Splines\n//++++++++++++++++++++++++++++++++++++++++++++++++++++'
-                '++++++++++++++++++\n')
-
-
-        physical_lines = []
-
-        for i in range(1, self.n_Point-1):
-            f.write('Line(%d) = {%d, %d};\n' % (i,i,i+1))
-
-            for boundary in self.boundaries:
-                if i >= boundary[0] and i+1 <= boundary[1]:
-                    physical_lines.append(i)
-
-
-        f.write('Line(%d) = {%d, 1};\n' % (i+1,i+1))
-
-        # globalize local variables
-        self.n_Spline = i+2
-        if len(self.boundaries) > 0:
-            self.physical_lines = physical_lines
-
-        return f
-
-    def writeGeoFileInnerRings(self, f, inner_rings_splines = True):
+    def writeGeoFileInnerRings(self, f):
         """
         Method to include inner rings (holes) in the .geo file
 
         Args:
             f: (Required) open text file representing the .geo file
-            inner_rings_splines: (Optional, defaults to True) True/False boolean to indicate to use splines for the inner ring, the alternative are lines
         """
 
         # initate local variables
@@ -780,7 +558,7 @@ class pymesh:
         n_Point = self.n_Point
 
         # check if there are inner rings
-        if self.inner:
+        if len(self.inter)>0:
             # write a header
             f.write('//+\n//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n'
                     '//+ Holes Points\n//++++++++++++++++++++++++++++++++++++++++++++++++++++'
@@ -802,7 +580,7 @@ class pymesh:
             # start a new counter to include all inner rings
             n_Spline_inter = n_Spline
 
-        if self.inner:
+        if len(self.inter)>0:
             # create header
             f.write('//+\n//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n'
                     '//+ Holes Splines\n//++++++++++++++++++++++++++++++++++++++++++++++++++++'
@@ -810,58 +588,25 @@ class pymesh:
 
             # initiate a list to store all inner spline ids
             Inner_Splines_ids = []
-            Inner_Splines_ids_perLL = []
-            # create a spline per inner ring (no boundaries are allowed at this point)
-            # create splines if indicated
-            if inner_rings_splines:
-                for I in Inner_Points:
-                    # open a spline
-                    f.write('Spline(%d) = {' % (n_Spline_inter))
-                    # add the id to the list of inner splines
-                    Inner_Splines_ids.append(n_Spline_inter)
-                    Inner_Splines_ids_perLL.append([n_Spline_inter])
-                    # count
-                    n_Spline_inter += 1
-                    # add all points to this spline
-                    for i in I:
-                        if not i in self.breaks or i == I[0]:
-                            f.write('%d,' % (i))
-                        else:
-                            f.write('%d};\n' % (i))
-                            f.write('Spline(%d) = {%d,' % (n_Spline_inter, i))
-                            # count
-                            Inner_Splines_ids.append(n_Spline_inter)
-                            Inner_Splines_ids_perLL[-1].append(n_Spline_inter)
-                            n_Spline_inter += 1
-                    # end with the first point of the ring
-                    f.write('%d};\n' % (I[0]))
-
-            # otherwise, create rings of lines
-            elif not inner_rings_splines:
-                for I in Inner_Points:
-                    # open a spline
-                    f.write('Line(%d) = {%d,' % (n_Spline_inter, I[0]))
-                    Inner_Splines_ids.append(n_Spline_inter)
-                    Inner_Splines_ids_perLL.append([n_Spline_inter])
-                    n_Spline_inter += 1
-                    # add all points to this spline
-                    for n in range(1,len(I)):
-                        i = I[n]
-                        f.write('%d};\nLine(%d) = {%d,' % (i, n_Spline_inter, i))
-                        Inner_Splines_ids.append(n_Spline_inter)
-                        Inner_Splines_ids_perLL[-1].append(n_Spline_inter)
-                        n_Spline_inter += 1
-                    # end with the first point of the ring
-                    f.write('%d};\n' % (I[0]))
+            # create a spline per inner ring (no breaks or boundaries are allowed at this point)
+            for I in Inner_Points:
+                # open a spline
+                f.write('Spline(%d) = {' % (n_Spline_inter))
+                # add the id to the list of inner splines
+                Inner_Splines_ids.append(n_Spline_inter)
+                # count
+                n_Spline_inter += 1
+                # add all points to this spline
+                for i in I:
+                    f.write('%d,' % (i))
+                # end with the first point of the ring
+                f.write('%d};\n' % (I[0]))
 
         # globalize local variables
-        if self.inner:
-            self.Inner_Points = Inner_Points
-            self.Inner_Splines_ids = Inner_Splines_ids
-            self.n_Spline_inter = n_Spline_inter
-            self.Inner_Splines_ids_perLL = Inner_Splines_ids_perLL
-
+        self.Inner_Points = Inner_Points
+        self.Inner_Splines_ids = Inner_Splines_ids
         self.n_Spline = n_Spline
+        self.n_Spline_inter = n_Spline_inter
         self.n_Point = n_Point
 
         return f
@@ -878,8 +623,7 @@ class pymesh:
         # set local variables based on global variables
         boundaries = self.boundaries
         n_Spline = self.n_Spline
-        if self.inner:
-            Inner_Splines_ids = self.Inner_Splines_ids
+        Inner_Splines_ids = self.Inner_Splines_ids
         physical_lines = self.physical_lines
 
         # add a header
@@ -890,7 +634,7 @@ class pymesh:
         if len(boundaries)==0:
             f.write('Physical Line("%s") = {' % physical_line_labels[0])
             for i in range(n_Spline-2):
-                f.write(' %d, ' % (i+1))
+                f.write('%d, ' % (i+1))
             f.write('%d};\n' % (n_Spline-1))
         # if there are boundaries
         else:
@@ -901,35 +645,27 @@ class pymesh:
                 # if it is not a physical line
                 if not physical_lines.__contains__(i):
                     closed_lines.append(i)
-        # add all boundary lines to the physical line
+        # add all boundary lines to the physical line list with label "Tidal Entrance"
         if len(boundaries) > 0:
-            j = 1
-            f.write('Physical Line("%s") = {1' % physical_line_labels[j])
-            for i in range(1,len(physical_lines)):
-                if physical_lines[i] - physical_lines[i-1] == 1:
-                    # add each pysical line
-                    f.write(', %d' % (physical_lines[i]))
-                else:
-                    f.write('};\n')
-                    j += 1
-                    f.write('Physical Line("%s") = {%d' % (physical_line_labels[j], physical_lines[i]))
-
-
+            f.write('Physical Line("%s") = {' % physical_line_labels[1])
+            for i in range(len(physical_lines)-1):
+                # add each pysical line
+                f.write('%d,' % (physical_lines[i]))
             # close the physical line object
-            f.write('};\n')
+            f.write('%d};\n' % (physical_lines[-1]))
 
             # non-boundary lines are 'closed' boundaries
             f.write('Physical Line("%s") = {' % physical_line_labels[0])
             for i in range(len(closed_lines)-1):
-                f.write(' %d,' % (closed_lines[i]))
-            f.write(' %d};\n' % (closed_lines[-1]))
+                f.write('%d,' % (closed_lines[i]))
+            f.write('%d};\n' % (closed_lines[-1]))
 
         if self.inner_rings:
             # all inner holes are ClosedInner boundaries
-            f.write('Physical Line("%s") = {' % physical_line_labels[-1])
+            f.write('Physical Line("%s") = {' % physical_line_labels[2])
             for i in range(len(Inner_Splines_ids)-1):
-                f.write(' %d,' % (Inner_Splines_ids[i]))
-            f.write(' %d};\n' % (Inner_Splines_ids[-1]))
+                f.write('%d,' % (Inner_Splines_ids[i]))
+            f.write('%d};\n' % (Inner_Splines_ids[-1]))
 
         return f
 
@@ -939,7 +675,6 @@ class pymesh:
 
         Args:
             f: (Required) open text file representing the .geo file
-            autocoherence: (Optional, defaults to False) True/False boolean to indicate autocoherence
         """
 
         # add header
@@ -955,9 +690,12 @@ class pymesh:
     def writeGeoFileLineLoopsSurface(self, f, inner_rings = True):
         """
         Method to write the lines indicating the line loop and surface of the exterior ring
+
         Args:
             f: (Required) open text file representing the .geo file
             inner_rings: (Optional, defaults to True) True/False boolean to add the points and splines of the inner rings
+
+
         """
 
         # set global parameters as local
@@ -965,8 +703,6 @@ class pymesh:
         n_Surface = self.n_Surface
         n_Point = self.n_Point
         n_Spline = self.n_Spline
-        if inner_rings:
-            Inner_Splines_ids_perLL = self.Inner_Splines_ids_perLL
 
         # create a header
         f.write('//+\n//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n'
@@ -976,48 +712,45 @@ class pymesh:
         # create a line loop with all splines of the exterior
         # open the line loop
         f.write('Line Loop(%d) = {' % (n_LineLoop))
-        n_LineLoop += 1
         # add all the splines
         for i in range(1,n_Spline-1):
             f.write('%d, '% (i))
         # close the line loop
         f.write('%d};\n' % (n_Spline-1))
-
-        # check if there are inner rings
-        if inner_rings:
-            # create header
-            f.write('//+ Inner loops\n')
-            # counter
-            t = 0
-            # go over all inner rings ( Inner_Points is a list of list and so, its length is equal to the number of rings)
-            for I in self.Inner_Points:
-                # per ring, write a line loop, plane and physical surface
-                f.write('Line Loop(%d) = {%d' % (n_LineLoop, Inner_Splines_ids_perLL[t][0]))
-                if len(Inner_Splines_ids_perLL[t]) > 1:
-                    for i in range(1, len(Inner_Splines_ids_perLL[t])):
-                        f.write(', %d' % Inner_Splines_ids_perLL[t][i])
-                f.write('};\n')
-
-                # count!
-                t += 1
-                n_LineLoop += 1
-
-        # create header
-        f.write('//+ Plane Surface\n')
         # create a plane surface from the lineloop
-        f.write('Plane Surface(%d) = {1' % (n_Surface))
-
-        if inner_rings:
-            for i in range(2,n_LineLoop):
-                f.write(', %d' % i)
-        f.write('};\n');
-
+        f.write('Plane Surface(%d) = {%d};\n' % (n_Surface, n_LineLoop))
         # create a physical surface from the plane surface (no water can pass this surface)
         f.write('Physical Surface("inside") = {%d};\n' % (n_Surface))
 
         # count!
         n_LineLoop += 1
         n_Surface += 1
+
+        # Inner holes - Line loop and Surfaces
+        #------------------------------------------------------------------
+
+        # check if there are inner rings
+        if inner_rings:
+            # create header
+            f.write('//+\n//+ Inner loops and surfaces\n//+\n')
+            # counter
+            t = 0
+            # go over all inner rings ( Inner_Points is a list of list and so, its length is equal to the number of rings)
+            for I in self.Inner_Points:
+                # per ring, write a line loop, plane and physical surface
+                f.write('Line Loop(%d) = {%d};\n' % (n_LineLoop, n_Spline + t))
+                f.write('Plane Surface(%d) = {%d};\n' % (n_Surface, n_LineLoop))
+                # remove this inner ring from the outer ring
+                f.write('BooleanDifference(%d) = { Surface{%d}; Delete; }{ Surface{%d}; Delete;};\n' % (n_Surface+1, n_Surface-1, n_Surface))
+
+                # count!
+                t += 1
+                n_LineLoop += 1
+                n_Surface += 2
+
+
+        # create a final physical surface to set the domain
+        f.write('Physical Surface("domain") = {%d};\n' % (n_Surface - 1))
 
         # globalize local parameters
         self.n_LineLoop = n_LineLoop
@@ -1048,13 +781,13 @@ class pymesh:
 
         return f
 
-    def createBackgroundFile(self, XY_field, multiplier = 1, minres = 25, maxres = 1e9, zerovalues = 250, plot_arr = './test.png', buffer_interpolation = 50 ):
+    def createBackgroundFile(XY_field, multiplier = 1, minres = 25, zerovalues = 250, plot_arr = './test.png' ):
         """
-        Method to create a background file
+        Method to create a background file_
 
         Args:
-            XY_field: (Required) directory path string or list of strings to a pickle which hold a list with the following elements:
-                        - 2d numpy array representing a spatial raster with values for the mesh size (!!! non-channels cells should be zero)
+            XY_field: (Required)directory path string to a pickle which hold a list with the following elements:
+                        - 2d numpy array representing a spatial raster with values for the mesh size
                         - coordinate pair with the coordinates of the left bottom corner of the 2d numpy array
                         - x resolution
                         - y resolution
@@ -1065,26 +798,23 @@ class pymesh:
             buffer_interpolation: (Optional, defaults to False) False/float to indicate the size of buffer around the channels to interpolate
 
         """
-        print('Creating a background file...')
         # open the pickled file with the needed information for a heterogenuous background field
-        print(XY_field)
-
         with open(XY_field, 'rb') as input:
             xy = pickle.load(input)
         # background file
-        background_file = XY_field[:-3] + 'bg'
+        background_file = self.geofile[:-3] + 'bg'
         # function to create a valid background field from a Numpy 2D array
-        np2BackgroundField(xy[0], background_file , multiplier = multiplier, minres = minres, maxres = maxres,
+        np2BackgroundField(xy[0], background_file , multiplier = multiplier, minres = minres,
             zerovalues = zerovalues, zeropoint= xy[1], xres = xy[2], yres = xy[3], plot_arr = plot_arr,
             buffer_interpolation = buffer_interpolation)
 
-        print('Background file created!')
-        print('-----------------------------------')
+        self.background_file = background_file
+
         return background_file
 
-    def writeGeoFileHeterogeneousMesh(self, f, XY_field, multiplier = 1, minres = 25, maxres = 1e9,
+    def writeGeoFileHeterogeneousMesh(self, f, XY_field, multiplier = 1, minres = 25,
         zerovalues = 250, outside_mesh_size = 250, plot_arr = './backgroundfield.png',
-        buffer_interpolation = 50, create_background_file = True, background_file = ''):
+        buffer_interpolation = 50, create_background_file = True):
         """
         Method to set a heterogenuous cell size in the mesh
 
@@ -1104,19 +834,7 @@ class pymesh:
 
         """
         if create_background_file:
-            if type(XY_field) != list:
-                bf = [self.createBackgroundFile(XY_field, multiplier = multiplier, minres = minres, maxres = maxres, zerovalues = zerovalues, plot_arr = plot_arr, buffer_interpolation = buffer_interpolation)]
-            else:
-                bf = []
-                for field in XY_field:
-                    bf.append(self.createBackgroundFile(field, multiplier = multiplier, minres = minres,maxres = maxres, zerovalues = zerovalues, plot_arr = plot_arr, buffer_interpolation = buffer_interpolation))
-        else:
-            if len(background_file) == 0:
-                bf = [XY_field.split('.')[0]+'.bg']
-            else:
-                if type(background_file) == list:
-                    bf = background_file
-                else: bf = [background_file]
+            self.createBackgroundFile(XY_field, multiplier = multiplier, minres = minres, zerovalues = zerovalues, plot_arr = plot_arr)
 
         # add header
         f.write('//+\n//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n'
@@ -1124,36 +842,15 @@ class pymesh:
                 '++++++++++++++++++\n')
 
         # complete the background directory if it's a local directory
-        bf_correctpaths = []
-        for background_file in bf:
-            if background_file[0] == '.':
-                background_file = os.getcwd() + background_file[1:]
-            bf_correctpaths.append(background_file)
-
-        # make sure that the required parameters are in a list format
-        if type(outside_mesh_size) != list: outside_mesh_size = [outside_mesh_size]
-
-        n = 0
-        for background_file in bf_correctpaths:
-            n += 1
-            # add this background field as the structured background field
-            f.write('Field[%d] = Structured;\nField[%d].FileName = "%s";\n' % (n, n, background_file))
-            # set the cell size outside the background field
-            f.write('Field[%d].OutsideValue = %f;\n' % (n, outside_mesh_size[n-1]))
-            f.write('Field[%d].SetOutsideValue = %d;\n' % (n,n))
-            # set the format of this background field and set is at the background file to apply the meshing on
-            f.write('Field[%d].TextFormat = 1;\n' % (n))
-
-        if n == 1:
-            f.write('Background Field = 1;\n//+')
-        else:
-            n += 1
-            f.write('Field[%d] = Min;\n' % n)
-            f.write('Field[%d].FieldsList = {1' % n)
-            for i in range(2,n):
-                f.write(', %d' % i)
-            f.write('};\n')
-            f.write('Background Field = %d;\n//+' % n)
+        if background_file[0] == '.':
+            background_file = os.getcwd() + background_file[1:]
+        # add this background field as the structured background field
+        f.write('Field[1] = Structured;\nField[1].FileName = "%s";\n' % (background_file))
+        # set the cell size outside the background field
+        f.write('Field[1].OutsideValue = %f;\n' % (outside_mesh_size))
+        f.write('Field[1].SetOutsideValue = 1;\n')
+        # set the format of this background field and set is at the background file to apply the meshing on
+        f.write('Field[1].TextFormat = 1;\nBackground Field = 1;\n//+')
 
         return f
 
@@ -1181,7 +878,7 @@ class pymesh:
 
         return f
 
-    def meshTheDomain(self, outputfile_mesh, geo_file = 'self', logfile = False, ncores = 6):
+    def meshTheDomain(self, outputfile_mesh, geo_file = 'self'):
         """
         Method to mesh the .geo file
 
@@ -1196,11 +893,8 @@ class pymesh:
 
         self.meshfile = outputfile_mesh
 
-        if logfile:
-            os.system('gmsh ' + geo_file + ' -nt %d -2 -o ' % ncores + outputfile_mesh + ' -format msh2 -log '+ logfile)
-        else:
-            # mesh the .geo file
-            os.system('gmsh ' + geo_file + ' -nt %d -2 -o ' % ncores + outputfile_mesh + ' -format msh2')
+        # mesh the .geo file
+        os.system('gmsh ' + geo_file + ' -2 -o ' + outputfile_mesh + ' -format msh2')
 
     def getCoordinatesInnerHoleNodes(self, meshfile):
         """
@@ -1330,249 +1024,3 @@ class pymesh:
 
         #os.system('gmsh delete_physicals.gmsh')
         os.system('gmsh delete_physicals.gmsh -2 -o ' + outputfile_mesh + ' -format msh2')
-
-    def meshOneInnerHole(self, i, fn):
-        """
-        Method to mesh an inner hole
-
-        Args:
-            i: (Required) Integer representing which inner hole to mesh
-            fn: (Required) Directory path string to store the .geo and .msh file (do not add extension)
-        """
-
-        exter = self.exter
-        breaks = self.breaks
-        boundaries = self.boundaries
-        inner = self.inter[i]
-
-        try: geofile = self.geofile
-        except: pass
-
-        self.exter = inner
-        self.breaks = []
-        self.boundaries = []
-
-        self.writeGeoFile(fn+'.geo', cell_size = 50, inner_rings = False, add_physical_lines = False)
-        self.meshTheDomain(fn+'.msh', geo_file = fn+'.geo')
-
-        self.boundaries = boundaries
-        self.breaks = breaks
-        self.exter = exter
-        try: self.geofile = geofile
-        except: pass
-
-    @staticmethod
-    def nodes2CSV(fn, fn_mesh):
-        """
-        Method to translate all nodes in a gsmh file to a csv with two columns X & Y coordinates
-
-        Args:
-            fn: (Required) path string to save the csv file
-            fn_mesh: (Required) path string to load the mesh from
-        """
-        with open(fn, 'w+') as fcsv:
-            fcsv.write('X,Y\n')
-            with open(fn_mesh, 'r') as fmesh:
-                lines = fmesh.readlines()
-                nodes_n = 0
-                within_nodes = False
-                for line in lines:
-                    if line.startswith('$EndNodes'):
-                        within_nodes = False
-
-                    if within_nodes:
-                        if nodes_n == 0:
-                            nodes_n = int(line)
-                            print('%d nodes' % nodes_n)
-                        else:
-                            line = line.split(' ')
-                            x = float(line[1])
-                            y = float(line[2])
-                            fcsv.write('%f,%f\n' % (x,y))
-                            line = line[0]
-
-                    if line.startswith('$Nodes'):
-                        within_nodes = True
-
-    def calcEquilaterality(self, fn):
-        """
-        Method to calculate a csv with coordinate pairs and Equilaterality values for each triangle
-
-        Args:
-        - fn: (Required) Directory path string to save the csv
-        """
-
-        with open(self.meshfile, 'r') as f:
-
-                lines = f.readlines()
-
-                nodes = False
-                els = False
-
-                Nodes = []
-                Triangles = []
-
-                for line in lines:
-                    if line.startswith('$Nodes'):
-                        nodes = True
-
-                    elif line.startswith('$EndNodes'):
-                        nodes = False
-
-                    elif nodes:
-                        if len(line.split(' ')) > 1:
-                            x = float(line.split(' ')[1])
-                            y = float(line.split(' ')[2])
-                            Nodes.append([x,y])
-
-                    elif line.startswith('$Elements'):
-                        els = True
-
-                    elif line.startswith('$EndElements'):
-                        els = False
-
-                    elif els:
-                        if len(line.split(' ')) > 1:
-                            if '2 2 3 1' in line:
-                                t1, t2, t3 = [int(i) for i in line.split(' ')[-3:]]
-                                Triangles.append([t1-1, t2-1, t3-1])
-
-                Nodes = np.asarray(Nodes)
-                Equilateralities = []
-                Triangles_mp = []
-
-                for triangle in Triangles:
-                    p1, p2, p3 = Nodes[triangle,:]
-                    ptriangle = np.array([p1,p2,p3])
-                    mp = np.mean(ptriangle, axis = 0)
-                    Triangles_mp.append(mp)
-
-
-                    d12 = ((p1[1]-p2[1])**2 + (p1[0]-p2[0])**2)**0.5
-                    d13 = ((p1[1]-p3[1])**2 + (p1[0]-p3[0])**2)**0.5
-                    d23 = ((p2[1]-p3[1])**2 + (p2[0]-p3[0])**2)**0.5
-
-                    h1 = np.arccos((d23**2 - d12**2 - d13**2)/(-2*d12*d13))
-                    h2 = np.arccos((d13**2 - d12**2 - d23**2)/(-2*d12*d23))
-                    h3 = np.arccos((d12**2 - d13**2 - d23**2)/(-2*d13*d23))
-                    angles = np.array([h1, h2, h3])
-                    equi = np.max(angles)/np.min(angles)
-                    Equilateralities.append(equi)
-
-                Equilateralities = np.asarray(Equilateralities)
-                Triangles_mp = np.asarray(Triangles_mp)
-
-                df = pd.DataFrame({'X': Triangles_mp[:,0], 'Y': Triangles_mp[:,1], 'Equi': Equilateralities})
-                df.to_csv(fn, index = False)
-
-    @staticmethod
-    def checkForDuplicatesInGeoFile(geofile_fn):
-
-        Points = []
-        Point_IDs = []
-        with open(geofile_fn) as f:
-            lines = f.readlines()
-            for line in lines:
-                if line.startswith('Point'):
-                    id = int(line.split(' = ')[0].replace('Point(', '')[:-1])
-                    coor = line.split('=')[1].split(',')
-                    x = float(coor[0].replace('{', ''));
-                    y = float(coor[1])
-                    Point_IDs.append(id)
-                    Points.append([x, y])
-
-        Point_IDs = np.asarray(Point_IDs)
-        Points = np.asarray(Points)
-        values, ids, counts = np.unique(Points, axis=0, return_counts=True, return_index=True)
-        duplicates = values[counts > 1, :]
-        duplicate_ids = Point_IDs[ids[counts > 1]]
-
-        for d,id in enumerate(duplicate_ids):
-            print('Duplicate detected for Point(%d):' % id)
-            print('    X: %.2f' % duplicates[d, 0])
-            print('    Y: %.2f' % duplicates[d, 1])
-            print('-----------------------------')
-
-        if len(duplicate_ids) == 0:
-            print('No duplicates found.')
-
-        return len(duplicate_ids)==0
-
-    """
-    @staticmethod
-    def calcEquilaterality_static(mesh_fn, fn):
-        
-        Method to calculate a csv with coordinate pairs and Equilaterality values for each triangle
-
-        Args:
-        - fn: (Required) Directory path string to save the csv
-        
-
-        with open(mesh_fn, 'r') as f:
-
-                lines = f.readlines()
-
-                nodes = False
-                els = False
-
-                Nodes = []
-                Triangles = []
-
-                for line in lines:
-                    if line.startswith('$Nodes'):
-                        nodes = True
-
-                    elif line.startswith('$EndNodes'):
-                        nodes = False
-
-                    elif nodes:
-                        if len(line.split(' ')) > 1:
-                            x = float(line.split(' ')[1])
-                            y = float(line.split(' ')[2])
-                            Nodes.append([x,y])
-
-                    elif line.startswith('$Elements'):
-                        els = True
-
-                    elif line.startswith('$EndElements'):
-                        els = False
-
-                    elif els:
-                        if len(line.split(' ')) > 1:
-                            if line.split(' ')[1] ==  '2':
-                                t1, t2, t3 = [int(i) for i in line.split(' ')[-3:]]
-                                Triangles.append([t1-1, t2-1, t3-1])
-
-                Nodes = np.asarray(Nodes)
-                print(len(Triangles))
-                Equilateralities = []
-                Triangles_mp = []
-
-                t = 0
-                print('Calculating Triangle angles:')
-                for triangle in Triangles:
-
-                    print('   %.2f %%' % (t/len(Triangles)*100), end = '\r')
-                    t += 1
-
-                    p1, p2, p3 = Nodes[triangle,:]
-                    ptriangle = np.array([p1,p2,p3])
-                    mp = np.mean(ptriangle, axis = 0)
-                    Triangles_mp.append(mp)
-
-                    d12 = ((p1[1]-p2[1])**2 + (p1[0]-p2[0])**2)**0.5
-                    d13 = ((p1[1]-p3[1])**2 + (p1[0]-p3[0])**2)**0.5
-                    d23 = ((p2[1]-p3[1])**2 + (p2[0]-p3[0])**2)**0.5
-
-                    h1 = np.arccos((d23**2 - d12**2 - d13**2)/(-2*d12*d13))
-                    h2 = np.arccos((d13**2 - d12**2 - d23**2)/(-2*d12*d23))
-                    h3 = np.arccos((d12**2 - d13**2 - d23**2)/(-2*d13*d23))
-                    angles = np.array([h1, h2, h3])
-                    equi = np.max(angles)/np.min(angles)
-                    Equilateralities.append(equi)
-
-                Equilateralities = np.asarray(Equilateralities)
-                Triangles_mp = np.asarray(Triangles_mp)
-
-                df = pd.DataFrame({'X': Triangles_mp[:,0], 'Y': Triangles_mp[:,1], 'Equi': Equilateralities})
-                df.to_csv(fn, index = False)"""

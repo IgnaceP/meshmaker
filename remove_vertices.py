@@ -78,13 +78,13 @@ def removeVertices(mpol, geotype = 'pol'):
 
     # check if it is a Polygon or a MultiPolygon
     if type(mpol) == Polygon:
-        mpol = [mpol]
+        mpol = MultiPolygon([mpol])
 
     # Initialize list for new pols
     pols = []
 
     # Loop over all Polygons
-    for pol in mpol:
+    for pol in mpol.geoms:
 
         # exterior
         xy = np.rot90(pol.exterior.xy)

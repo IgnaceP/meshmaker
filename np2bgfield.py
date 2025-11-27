@@ -29,16 +29,18 @@ def np2BackgroundField(xy, outputfile, multiplier = 1,  minres = 25, maxres = fl
         outputfile: (Required) directory to store the newly generated file
         multiplier: (Optional, defaults 1) value to multiply the original array with
         minres: (Optional, defaults to 25) minimum mesh size
-        maxres: (Optional, defaults to 250) maximum mesh size
+        maxres: (Optional, defaults to inf) maximum mesh size
         zerovalues: (Optional, defaults to 250) the mesh size in areas with value 0
         zeropoint: (Optional, defaults to (0,0)) coordinate pair of the left bottom corner of the numpy image
         xres: (Optional, defaults to 1) cell width
         yres: (Optional, defaults to 1) cell height
         plot_arr: (Optional, defaults to False) False/file directory to store a plot of the original raster
-        buffer_interpolation: (Optional, defaults to False) False/float to indicate the size of buffer around the channels to interpolate
+        buffer_interpolation: (Optional, defaults to False) False/float to indicate the size of buffer around the channels to interpolate in meters
     """
 
+    print('Translating the numpy array into a background file...')
     # temporary directory
+    if os.path.isdir('./tmp/'): shutil.rmtree('./tmp/')
     os.mkdir('./tmp/')
 
     # copy original
@@ -49,9 +51,6 @@ def np2BackgroundField(xy, outputfile, multiplier = 1,  minres = 25, maxres = fl
 
     # assign zerovalues
     xy[xy_orig == 0] = zerovalues
-
-
-
     # if buffer is indicated:
     if buffer_interpolation:
         channels = xy_orig > 0
@@ -110,12 +109,14 @@ def np2BackgroundField(xy, outputfile, multiplier = 1,  minres = 25, maxres = fl
     N, N[0], N[-1] = [n for i in range(9)] * np.arange(9), 0, len(xy)
     xy_tiles = [xy[N[i]:N[i + 1]] for i in range(8)]
 
+    print('writing the separate txt files...')
     # parallelize the function using PathosPool
     pool = PathosPool(8)
     P = pool.map(writeFile, np.arange(8), xy_tiles)
     # add the header file as the first txt file in the list
     P.insert(0,'./tmp/header_file.txt')
 
+    print('stitching them together...')
     # stitch all txt files to each other, write in binary mode
     with open(outputfile, 'wb') as wfd:
         # open each txt file and copy its content into the final txt file
@@ -125,3 +126,4 @@ def np2BackgroundField(xy, outputfile, multiplier = 1,  minres = 25, maxres = fl
 
     # remove the tmp directory
     shutil.rmtree('./tmp/')
+    print('Succes!')
