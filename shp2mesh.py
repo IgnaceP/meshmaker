@@ -21,7 +21,7 @@ from shapely.geometry import Point
 import pandas as pd
 import geopandas as gpd
 
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 
 from shp2mpol import *
 from pol2pol import *
